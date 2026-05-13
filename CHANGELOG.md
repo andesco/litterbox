@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/elfhosted/litterbox/compare/1.1.0...1.1.1) (2026-05-13)
+
+
+### Bug Fixes
+
+* **proxy:** forward browser User-Agent verbatim — RD WAF 451 on "litterbox/..." ([e98998a](https://github.com/elfhosted/litterbox/commit/e98998a1a634b7864473e9a37613bd43f2e55353))
+
 ## [1.1.0](https://github.com/elfhosted/litterbox/compare/1.0.1...1.1.0) (2026-05-13)
 
 
