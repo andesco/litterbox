@@ -899,16 +899,23 @@
     const filteredViaRegex = stats.brokenByStatus[FILTERED_STATUS_KEY] || 0;
     const probeFiltered = (probeResult && probeResult.filtered) || 0;
     const probeDeadLink = (probeResult && probeResult.deadLink) || 0;
+    const probeBytes = (probeResult && ((probeResult.filteredBytes || 0) + (probeResult.deadLinkBytes || 0))) || 0;
     const adminBroken = (stats.brokenByStatus.error || 0)
       + (stats.brokenByStatus.virus || 0)
       + (stats.brokenByStatus.dead || 0)
       + (stats.brokenByStatus.magnet_error || 0);
     const totalScooped = stats.broken + probeFiltered + probeDeadLink;
 
+    // Headline / stink reflect EVERYTHING the scan + probe surfaced,
+    // not just regex hits. Without this, a library with 0 regex hits
+    // but 72 probe-found infringing_file torrents would render
+    // "0 B broken (0.0%)" — technically true of the fast-pass, but
+    // wildly misleading next to the breakdown that mentions the 72.
+    const totalBrokenBytes = stats.brokenBytes + probeBytes;
+    const totalBrokenStink = stinkRating(totalBrokenBytes, stats.libraryBytes);
+
     // Projected after-state: assume everything broken got cleaned.
-    // Same arithmetic as the before/after section so the headline
-    // numbers line up.
-    const remainingLibBytes = Math.max(0, stats.libraryBytes - stats.brokenBytes);
+    const remainingLibBytes = Math.max(0, stats.libraryBytes - totalBrokenBytes);
     const afterStink = stinkRating(0, remainingLibBytes);
 
     // Inline-comma breakdown — one line vs a 5-row table. Plain-
@@ -920,19 +927,21 @@
     if (probeFiltered > 0)    parts.push(`${probeFiltered} more caught by per-torrent probe`);
     if (probeDeadLink > 0)    parts.push(`${probeDeadLink} dead-link errors`);
     if (adminBroken > 0)      parts.push(`${adminBroken} flagged broken by RD`);
-    const breakdown = parts.join(" · ");
+    const breakdown = parts.length > 0
+      ? parts.join(" · ")
+      : "_nothing flagged yet — run the deep-clean step to surface probe-only filters_";
 
     const headline = pickRandom(REDDIT_HEADLINES)({
       total: totalScooped,
-      brokenBytes: fmtBytesRounded(stats.brokenBytes),
+      brokenBytes: fmtBytesRounded(totalBrokenBytes),
       libraryBytes: fmtBytesRounded(stats.libraryBytes),
-      pct: stink.pct.toFixed(1),
-      stink,
+      pct: totalBrokenStink.pct.toFixed(1),
+      stink: totalBrokenStink,
     });
     const lines = [
       headline,
       "",
-      `Stink rating: **${stink.label} (${stink.score}/10)** → **${afterStink.label} (${afterStink.score}/10)** ✨`,
+      `Stink rating: **${totalBrokenStink.label} (${totalBrokenStink.score}/10)** → **${afterStink.label} (${afterStink.score}/10)** ✨`,
       "",
       `**Breakdown:** ${breakdown}`,
       "",
@@ -1605,13 +1614,39 @@
   //   - "🚀 Post to Reddit"  — copies AND opens the megathread.
   // ============================================================
 
+  // Derive probe totals from the persisted per-hash cache when the
+  // in-memory _lastProbeResult is missing — typical after a page
+  // refresh, when probes from a prior session left signal in
+  // localStorage but the in-memory tally got reset. Skips any
+  // torrent already flagged broken by regex/RD-status so it doesn't
+  // double-count items already covered by stats.broken.
+  function deriveProbeResultFromCache() {
+    if (!_allTorrents) return null;
+    const cache = loadProbeCache();
+    let filtered = 0, healthy = 0, deadLink = 0;
+    let filteredBytes = 0, deadLinkBytes = 0;
+    for (const t of _allTorrents) {
+      if (isBroken(t)) continue;
+      const v = cache[t.hash];
+      if (!v) continue;
+      const bytes = Number(t.bytes) || 0;
+      if (v.outcome === "filtered") { filtered++; filteredBytes += bytes; }
+      else if (v.outcome === "dead-link") { deadLink++; deadLinkBytes += bytes; }
+      else if (v.outcome === "healthy") { healthy++; }
+    }
+    return { filtered, healthy, deadLink, filteredBytes, deadLinkBytes };
+  }
+
   function buildCurrentReport() {
     const stats = _beforeStats;
     if (!stats) return null;
     const stink = stinkRating(stats.brokenBytes, stats.libraryBytes);
     const candidates = findDiscoveryCandidates(loadReleaseAgg(), 5, 0.9);
     annotateCoOccurrence(candidates, _allTorrents);
-    return buildRedditReport(stats, stink, _lastProbeResult, candidates);
+    // Always derive from the persisted cache so a refresh-then-
+    // report flow doesn't render empty stats. _lastProbeResult is an
+    // in-memory tally for the post-probe UI; the cache is canonical.
+    return buildRedditReport(stats, stink, deriveProbeResultFromCache(), candidates);
   }
 
 
