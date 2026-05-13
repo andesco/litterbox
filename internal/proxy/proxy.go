@@ -54,21 +54,23 @@ const upstreamTimeout = 30 * time.Second
 // server init and reused for every request — every dependency is
 // read-only.
 type Handler struct {
-	log       *slog.Logger
-	client    *http.Client
-	userAgent string
+	log    *slog.Logger
+	client *http.Client
 }
 
-// New constructs the proxy handler. version is included in the
-// outbound User-Agent so RD's logs can attribute calls to a specific
-// release; pass "dev" or "" for unbuilt local runs. The underlying
-// HTTP client uses the default transport (connection pooling
-// included) with no global Timeout — per-request timeouts come from
-// the upstreamTimeout context budget on each call.
-func New(log *slog.Logger, version string) *Handler {
-	if version == "" {
-		version = "dev"
-	}
+// New constructs the proxy handler. The underlying HTTP client uses
+// the default transport (connection pooling included) with no global
+// Timeout — per-request timeouts come from the upstreamTimeout
+// context budget on each call.
+//
+// User-Agent forwarding: the proxy forwards whatever UA the browser
+// sent, not a synthetic "litterbox/X.Y.Z" string. A previous
+// litterbox-tagged UA got an entry on RD's WAF blocklist (HTTP 451
+// permission_denied on /oauth/v2/device/code), which broke sign-in
+// entirely. Forwarding the browser's real UA keeps proxy traffic
+// indistinguishable from any other browser hitting RD, which is
+// what it actually is (the proxy is purely a CORS bypass).
+func New(log *slog.Logger) *Handler {
 	return &Handler{
 		log: log,
 		client: &http.Client{
@@ -77,7 +79,6 @@ func New(log *slog.Logger, version string) *Handler {
 			// context.WithTimeout instead so the budget is explicit
 			// and visible in tracing.
 		},
-		userAgent: "litterbox/" + version + " (https://github.com/elfhosted/litterbox)",
 	}
 }
 
@@ -134,7 +135,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if ct := r.Header.Get("Content-Type"); ct != "" {
 		upstream.Header.Set("Content-Type", ct)
 	}
-	upstream.Header.Set("User-Agent", h.userAgent)
+	// Forward the browser's User-Agent verbatim. See New() — never
+	// synthesize a "litterbox/..." UA; RD's WAF returns 451 for that
+	// string, which broke sign-in entirely until this was reverted.
+	if ua := r.Header.Get("User-Agent"); ua != "" {
+		upstream.Header.Set("User-Agent", ua)
+	}
 
 	resp, err := h.client.Do(upstream)
 	if err != nil {

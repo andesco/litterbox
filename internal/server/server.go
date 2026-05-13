@@ -59,7 +59,7 @@ func New(log *slog.Logger, webRoot fs.FS, cfg Config) (*Server, error) {
 
 	// /api/proxy — RD CORS workaround. See internal/proxy for the
 	// hostname allowlist and security posture.
-	proxyHandler := proxy.New(log, cfg.Version)
+	proxyHandler := proxy.New(log)
 	mux.Handle("/api/proxy", proxyHandler)
 	mux.Handle("/api/proxy/", proxyHandler)
 
