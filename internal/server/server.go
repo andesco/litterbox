@@ -78,10 +78,22 @@ func New(log *slog.Logger, webRoot fs.FS, cfg Config) (*Server, error) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	// Static assets served from the supplied FS.
-	mux.Handle("/", http.FileServer(http.FS(webRoot)))
+	// Static assets served from the supplied FS, with a short
+	// Cache-Control so a release rolling out gets picked up by
+	// downstream caches (Cloudflare, browsers) within 5 minutes
+	// instead of inheriting the zone-default multi-hour TTL — which
+	// once left a renamed /api/version fetch baked into a cached
+	// app.js, breaking the version chip until the cache aged out.
+	mux.Handle("/", cacheControl(http.FileServer(http.FS(webRoot)), "max-age=300, must-revalidate"))
 
 	return &Server{mux: mux, log: log}, nil
+}
+
+func cacheControl(h http.Handler, value string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", value)
+		h.ServeHTTP(w, r)
+	})
 }
 
 // ServeHTTP dispatches the request. ServeMux already handles
