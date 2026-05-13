@@ -334,11 +334,15 @@
 
     // Landing page: if already signed in, skip straight to dashboard.
     const signinBtn = document.getElementById("signin-button");
-    if (signinBtn) {
+    const tokenBtn = document.getElementById("api-token-button");
+    if (signinBtn || tokenBtn) {
       if (localStorage.getItem(LS.accessToken)) {
         window.location.href = "/dashboard.html";
         return;
       }
+    }
+
+    if (signinBtn) {
       const status = document.getElementById("signin-status");
       signinBtn.addEventListener("click", async () => {
         signinBtn.disabled = true;
@@ -348,6 +352,47 @@
           status.innerHTML = `<span class="warn">Sign-in failed:</span> ${escapeHTML(err.message)}`;
           signinBtn.disabled = false;
         }
+      });
+    }
+
+    if (tokenBtn) {
+      const input = document.getElementById("api-token-input");
+      const status = document.getElementById("api-token-status");
+      const submit = async () => {
+        const token = (input.value || "").trim();
+        if (!token) {
+          status.innerHTML = `<span class="warn">Please paste your Real-Debrid API token first.</span>`;
+          return;
+        }
+        tokenBtn.disabled = true;
+        status.textContent = "Validating token…";
+        try {
+          // Validate by calling /rest/1.0/user. We pass the candidate
+          // token explicitly via headers since it's not in
+          // localStorage yet (proxiedFetch only auto-attaches stored
+          // tokens). Skips /oauth/v2/* entirely so the rate-limit
+          // pain doesn't apply to this path.
+          const r = await proxiedFetch("/rest/1.0/user", {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (r.status === 401 || r.status === 403) {
+            throw new Error("Real-Debrid rejected this token. Double-check you copied it correctly from real-debrid.com/apitoken.");
+          }
+          if (!r.ok) {
+            throw new Error(`Validation failed: HTTP ${r.status}`);
+          }
+          // Store + redirect. No refresh_token / expiresAt for API
+          // tokens (they don't rotate on RD's schedule).
+          localStorage.setItem(LS.accessToken, token);
+          window.location.href = "/dashboard.html";
+        } catch (err) {
+          status.innerHTML = `<span class="warn">${escapeHTML(err.message)}</span>`;
+          tokenBtn.disabled = false;
+        }
+      };
+      tokenBtn.addEventListener("click", submit);
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") submit();
       });
     }
 

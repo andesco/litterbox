@@ -99,9 +99,19 @@ docker run -p 8080:8080 litterbox
 | Variable | Default | Notes |
 | -------- | ------- | ----- |
 | `LISTEN` | `:8080` | HTTP listen address |
+| `REDDIT_MEGATHREAD_URL` | (empty) | URL for the "Post to Reddit" button. When empty, the button is hidden. |
+| `RD_BLOCKED_FILENAME_REGEX` | baked-in pattern | Override the fast-pass filename detector without rebuilding. |
+| `OUTBOUND_PROXIES` | (empty) | Comma-separated list of HTTP proxy URLs the `/api/proxy` handler picks from at random per request, to dilute the egress fingerprint when RD rate-limits per source IP. |
 
 No database, no secrets, no shared state. The server is purely a
 static-asset host plus a CORS-bypass proxy.
+
+## Contributors
+
+Thanks to [@andesco](https://github.com/andesco) for the WAF-prefix
+strip in [`internal/proxy/proxy.go`](internal/proxy/proxy.go) (PR #7) —
+defensive fallback for when Real-Debrid's WAF returns 451 with a
+double-JSON body, in case the User-Agent-forwarding fix ever regresses.
 
 ## Deployment
 

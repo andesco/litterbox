@@ -27,8 +27,28 @@
       OAuth (no API key entry, no server-side storage), it tallies the
       casualties, rates the rot, and offers a one-click bulk-scoop.
     </p>
-    <button id="signin-button" type="button">🐾 Sign in with Real-Debrid</button>
-    <p id="signin-status" class="muted small"></p>
+    <div class="signin-token">
+      <label for="api-token-input"><strong>Sign in with your Real-Debrid API token:</strong></label>
+      <input id="api-token-input" type="password" autocomplete="off" spellcheck="false" placeholder="paste your API token here">
+      <button id="api-token-button" type="button">Use this token</button>
+      <p class="muted small">
+        Get your token from
+        <a href="https://real-debrid.com/apitoken" target="_blank" rel="noopener">real-debrid.com/apitoken</a>.
+        It's stored only in your browser's <code>localStorage</code> — never sent to our server beyond the stateless proxy that forwards your requests to Real-Debrid.
+      </p>
+      <p id="api-token-status" class="muted small"></p>
+    </div>
+
+    <details class="signin-oauth-fallback">
+      <summary class="muted small">— or sign in with OAuth instead —</summary>
+      <p class="muted small">
+        OAuth signs you in via Real-Debrid's authorization flow (no API key to copy, but slower and currently
+        rate-limited by RD's per-IP throttle if many users sign in at once). The token still lives only in
+        your browser; the OAuth flow just gets it there a different way.
+      </p>
+      <button id="signin-button" type="button">🐾 Sign in with Real-Debrid (OAuth)</button>
+      <p id="signin-status" class="muted small"></p>
+    </details>
   </section>
 
   <!-- Detection-pattern chips. Some visitors come here purely to

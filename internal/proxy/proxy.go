@@ -24,7 +24,9 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"math/rand"
@@ -210,12 +212,79 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"body_preview", string(snippet))
 	}
 
+	// For certain API requests RD returns 451 and prepends an error
+	// JSON before the real response body:
+	//   {"error":"permission_denied","error_code":9}{"id":...}
+	// Strip the prefix and return 200 when the second JSON token is a
+	// clean success (no "error" key) or an array. Genuine 451s from
+	// /unrestrict/link (error_code 35, infringing-file filter) contain
+	// only one JSON object and are left untouched. Belt-and-braces
+	// against RD's WAF — the UA-forward fix should mostly prevent the
+	// double-JSON case, but this handles the residual.
+	// Contributed by @andesco in PR #7.
+	statusCode := resp.StatusCode
+	if statusCode == 451 {
+		if real, ok := extractRealBody(body); ok {
+			body = real
+			statusCode = http.StatusOK
+		}
+	}
+
 	// Propagate the response.
 	for _, h := range []string{"Content-Type", "Content-Length", "Retry-After"} {
 		if v := resp.Header.Get(h); v != "" {
 			w.Header().Set(h, v)
 		}
 	}
-	w.WriteHeader(resp.StatusCode)
+	// Content-Length may no longer match after stripping the WAF prefix.
+	if statusCode != resp.StatusCode {
+		w.Header().Del("Content-Length")
+	}
+	w.WriteHeader(statusCode)
 	_, _ = w.Write(body)
+}
+
+// extractRealBody detects RD's double-JSON pattern and returns the
+// second token when it is a success object (no "error" key) or an
+// array. Walks the first JSON object with brace counting + escape
+// handling so it's robust to strings containing braces.
+func extractRealBody(body []byte) ([]byte, bool) {
+	depth, inStr, escaped := 0, false, false
+	for i, b := range body {
+		switch {
+		case escaped:
+			escaped = false
+		case b == '\\' && inStr:
+			escaped = true
+		case b == '"':
+			inStr = !inStr
+		case inStr:
+			// inside a string literal — ignore braces
+		case b == '{':
+			depth++
+		case b == '}':
+			depth--
+			if depth == 0 {
+				rest := bytes.TrimSpace(body[i+1:])
+				if len(rest) == 0 {
+					return nil, false
+				}
+				if rest[0] == '[' {
+					return rest, true
+				}
+				if rest[0] == '{' {
+					var check map[string]json.RawMessage
+					if err := json.Unmarshal(rest, &check); err != nil {
+						return nil, false
+					}
+					if _, hasErr := check["error"]; hasErr {
+						return nil, false
+					}
+					return rest, true
+				}
+				return nil, false
+			}
+		}
+	}
+	return nil, false
 }
