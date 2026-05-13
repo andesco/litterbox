@@ -155,6 +155,9 @@
     const r = await proxiedFetch(
       `/oauth/v2/device/code?client_id=${CLIENT_ID}&new_credentials=yes`
     );
+    if (r.status === 429) {
+      throw new Error("Real-Debrid is rate-limiting LitterBox right now (too many people signing in at once). Wait ~60s and try again.");
+    }
     if (!r.ok) throw new Error(`device code start: ${r.status}`);
     return r.json();
   }

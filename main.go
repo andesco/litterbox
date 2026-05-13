@@ -32,6 +32,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -87,6 +88,21 @@ func main() {
 		log.Error("embed sub failed", "err", err)
 		os.Exit(1)
 	}
+	// OUTBOUND_PROXIES — comma-separated list of HTTP-proxy URLs the
+	// /api/proxy handler picks from at random per request. RD rate-
+	// limits per source IP; with all replicas leaving from the same
+	// k8s egress, concurrent sign-ins hit 429 quickly. Set this to
+	// a list of upstream proxies (residential rotators or just a
+	// handful of distinct VPSes) to dilute the rate-limit hit.
+	var outboundProxies []string
+	if raw := os.Getenv("OUTBOUND_PROXIES"); raw != "" {
+		for _, s := range strings.Split(raw, ",") {
+			if s = strings.TrimSpace(s); s != "" {
+				outboundProxies = append(outboundProxies, s)
+			}
+		}
+	}
+
 	cfg := server.Config{
 		Version: readVersion(),
 		// REDDIT_MEGATHREAD_URL — operator-rotatable per release cycle.
@@ -102,7 +118,7 @@ func main() {
 		RDBlockedFilenameRegex: envOr("RD_BLOCKED_FILENAME_REGEX",
 			`\[(rartv|rarbg|eztv)\]|\b(YTS|Erai-raws|CR)\b|(WEB-?Rip|WEB-?DL|AMZN|DSNP)`),
 	}
-	srv, err := server.New(log, webRoot, cfg)
+	srv, err := server.New(log, webRoot, cfg, outboundProxies)
 	if err != nil {
 		log.Error("server init failed", "err", err)
 		os.Exit(1)
